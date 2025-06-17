@@ -1,0 +1,22 @@
+{
+  "version": 2,
+  "functions": {
+    "app.js": {
+      "runtime": "@vercel/node"
+    }
+  },
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/app.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/app.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production",
+    "DEMO_MODE": "true"
+  }
+}

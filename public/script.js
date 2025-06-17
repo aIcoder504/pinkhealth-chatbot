@@ -1,7 +1,6 @@
-// PinkHealth Enhanced Dashboard JavaScript - Chart.js 3.x Compatible
+// PinkHealth Dashboard - Vercel Optimized (No WebSocket)
 class PinkHealthDashboard {
     constructor() {
-        this.socket = null;
         this.charts = {};
         this.currentSection = 'dashboard';
         this.systemStatus = {
@@ -9,6 +8,7 @@ class PinkHealthDashboard {
             database: false,
             lastUpdate: null
         };
+        this.isVercel = window.location.hostname.includes('vercel.app');
         
         this.init();
     }
@@ -16,8 +16,11 @@ class PinkHealthDashboard {
     init() {
         console.log('🏥 Initializing PinkHealth Dashboard...');
         
-        // Initialize Socket.IO connection
-        this.initializeSocket();
+        // Skip WebSocket for Vercel
+        if (this.isVercel) {
+            console.log('🌐 Running on Vercel - Optimized mode');
+            this.showToast('Dashboard running in cloud mode', 'info');
+        }
         
         // Setup navigation
         this.setupNavigation();
@@ -31,48 +34,13 @@ class PinkHealthDashboard {
         // Load initial data
         this.loadDashboardData();
         
-        // Setup periodic data refresh
+        // Setup periodic data refresh (more frequent for Vercel)
         this.setupDataRefresh();
         
         // Setup search functionality
         this.setupSearch();
         
         console.log('✅ Dashboard initialized successfully');
-    }
-
-    initializeSocket() {
-        try {
-            this.socket = io();
-            
-            this.socket.on('connect', () => {
-                console.log('🔌 Connected to server');
-                this.showToast('Connected to server', 'success');
-                this.updateSystemStatus('connected');
-            });
-
-            this.socket.on('disconnect', () => {
-                console.log('❌ Disconnected from server');
-                this.showToast('Disconnected from server', 'error');
-                this.updateSystemStatus('disconnected');
-            });
-
-            this.socket.on('stats-update', (data) => {
-                this.handleStatsUpdate(data);
-            });
-
-            this.socket.on('new-appointment', (appointment) => {
-                this.handleNewAppointment(appointment);
-                this.showToast(`New appointment: ${appointment.patient}`, 'success');
-            });
-
-            this.socket.on('whatsapp-status', (status) => {
-                this.updateWhatsAppStatus(status);
-            });
-
-        } catch (error) {
-            console.error('❌ Socket initialization error:', error);
-            this.showToast('Connection error. Retrying...', 'error');
-        }
     }
 
     setupNavigation() {
@@ -129,7 +97,8 @@ class PinkHealthDashboard {
 
         // Close mobile menu if open
         if (window.innerWidth <= 768) {
-            document.getElementById('sidebar').classList.remove('open');
+            const sidebar = document.getElementById('sidebar');
+            if (sidebar) sidebar.classList.remove('open');
         }
     }
 
@@ -365,11 +334,11 @@ class PinkHealthDashboard {
             });
         }
 
-        // Doctor Performance Chart - FIXED FOR CHART.JS 3.x
+        // Doctor Performance Chart
         const doctorCtx = document.getElementById('doctorChart');
         if (doctorCtx) {
             this.charts.doctor = new Chart(doctorCtx, {
-                type: 'bar', // Changed from 'horizontalBar' to 'bar'
+                type: 'bar',
                 data: {
                     labels: ['Dr. Smith', 'Dr. Carter', 'Dr. Brown', 'Dr. Davis'],
                     datasets: [{
@@ -386,9 +355,9 @@ class PinkHealthDashboard {
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    indexAxis: 'y', // This makes it horizontal
+                    indexAxis: 'y',
                     scales: {
-                        x: { // Changed from 'x' to 'x' for horizontal bars
+                        x: {
                             beginAtZero: true
                         }
                     }
@@ -447,9 +416,9 @@ class PinkHealthDashboard {
                 indicator.className = 'fas fa-circle';
                 indicator.style.color = '#f44336';
             }
-            if (statusText) statusText.textContent = 'Disconnected';
+            if (statusText) statusText.textContent = 'Cloud Mode';
             
-            if (startBtn) startBtn.disabled = false;
+            if (startBtn) startBtn.disabled = this.isVercel;
             if (stopBtn) stopBtn.disabled = true;
         }
     }
@@ -513,7 +482,6 @@ class PinkHealthDashboard {
     updateSpecialtyChart(data) {
         if (!this.charts.specialty) return;
 
-        // Use real specialty data if available
         if (data.specialties) {
             const specialties = Object.keys(data.specialties);
             const counts = Object.values(data.specialties);
@@ -538,6 +506,9 @@ class PinkHealthDashboard {
                 <div class="no-appointments">
                     <i class="fas fa-calendar-times"></i>
                     <p>No appointments found</p>
+                    <button class="btn btn-primary" onclick="dashboard.loadAppointmentsData()">
+                        <i class="fas fa-refresh"></i> Refresh
+                    </button>
                 </div>
             `;
             return;
@@ -609,28 +580,34 @@ class PinkHealthDashboard {
         try {
             this.showLoading(true);
             
-            // For demo, simulate search
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Try API call first
+            const response = await fetch(`/api/patient/search?query=${encodeURIComponent(query)}`);
+            const data = await response.json();
             
-            const mockResults = {
-                patient: {
-                    name: 'Anshul Choudhary',
-                    phone: '+91-9627733034',
-                    age: 28,
-                    lastVisit: '2 weeks ago'
-                },
-                appointments: [
-                    {
-                        id: 'APT001',
-                        doctor: 'Dr. Sarah Smith',
-                        date: 'Today',
-                        time: '2:00 PM',
-                        status: 'confirmed'
-                    }
-                ]
-            };
+            if (data.results && data.results.length > 0) {
+                this.renderPatientResults({ patient: data.results[0], appointments: data.results[0].appointments || [] });
+            } else {
+                // Fallback to demo data
+                const mockResults = {
+                    patient: {
+                        name: query.includes('91') ? 'Patient ' + query.slice(-4) : query,
+                        phone: query.includes('91') ? query : '+91-9999999999',
+                        age: 28,
+                        lastVisit: '2 weeks ago'
+                    },
+                    appointments: [
+                        {
+                            id: 'APT001',
+                            doctor: 'Dr. Sarah Smith',
+                            date: 'Today',
+                            time: '2:00 PM',
+                            status: 'confirmed'
+                        }
+                    ]
+                };
+                this.renderPatientResults(mockResults);
+            }
             
-            this.renderPatientResults(mockResults);
             this.showLoading(false);
             
         } catch (error) {
@@ -703,14 +680,14 @@ class PinkHealthDashboard {
     }
 
     setupDataRefresh() {
-        // Refresh data every 30 seconds
+        // Refresh data more frequently for cloud deployment
         setInterval(() => {
             if (this.currentSection === 'dashboard') {
                 this.loadDashboardData();
             }
-        }, 30000);
+        }, this.isVercel ? 10000 : 30000); // 10s for Vercel, 30s for local
 
-        // Update activity feed every 5 seconds
+        // Update activity feed
         setInterval(() => {
             this.updateActivityFeed();
         }, 5000);
@@ -740,44 +717,6 @@ class PinkHealthDashboard {
         }
     }
 
-    handleStatsUpdate(data) {
-        // Update real-time stats
-        if (data.totalMessages) {
-            this.updateElement('whatsapp-messages', data.totalMessages.toLocaleString());
-        }
-        if (data.appointmentsToday) {
-            this.updateElement('total-appointments', data.appointmentsToday);
-        }
-        if (data.activeChats) {
-            this.updateElement('active-chats', data.activeChats);
-        }
-    }
-
-    handleNewAppointment(appointment) {
-        // Add to today's appointments if it's for today
-        const container = document.getElementById('today-appointments');
-        if (container && appointment.date === 'today') {
-            const appointmentHTML = `
-                <div class="appointment-item new-appointment">
-                    <div class="appointment-time">${appointment.time}</div>
-                    <div class="appointment-details">
-                        <h4>${appointment.patient} - ${appointment.doctor}</h4>
-                        <p>General Consultation • Just booked</p>
-                    </div>
-                </div>
-            `;
-            container.insertAdjacentHTML('afterbegin', appointmentHTML);
-            
-            // Remove the "new" class after animation
-            setTimeout(() => {
-                const newItem = container.querySelector('.new-appointment');
-                if (newItem) {
-                    newItem.classList.remove('new-appointment');
-                }
-            }, 3000);
-        }
-    }
-
     updateElement(id, value) {
         const element = document.getElementById(id);
         if (element) {
@@ -785,16 +724,13 @@ class PinkHealthDashboard {
         }
     }
 
-    // Add missing method that was causing error
     updateAppointmentStats(stats) {
-        // Update appointment statistics on the page
         this.updateElement('total-bookings', stats.total || 0);
         this.updateElement('confirmed-bookings', stats.confirmed || 0);
         this.updateElement('pending-bookings', stats.pending || 0);
         this.updateElement('cancelled-bookings', stats.cancelled || 0);
     }
 
-    // Add missing analytics methods
     updateAnalyticsSummary(data) {
         this.updateElement('total-revenue', `₹${(data.revenue?.total || 50000).toLocaleString()}`);
         this.updateElement('total-patients', data.patients?.total || 245);
@@ -803,7 +739,6 @@ class PinkHealthDashboard {
     }
 
     updateAnalyticsCharts(data) {
-        // Update analytics charts with real data
         if (this.charts.weekly && data.weeklyStats) {
             this.charts.weekly.data.datasets[0].data = data.weeklyStats;
             this.charts.weekly.update();
@@ -833,10 +768,8 @@ class PinkHealthDashboard {
         
         if (!toast || !toastMessage || !toastIcon) return;
 
-        // Set message and icon
         toastMessage.textContent = message;
         
-        // Set icon based on type
         const icons = {
             success: 'fas fa-check-circle',
             error: 'fas fa-exclamation-circle',
@@ -845,23 +778,17 @@ class PinkHealthDashboard {
         };
         
         toastIcon.className = `toast-icon ${icons[type] || icons.info}`;
-        
-        // Set toast type
         toast.className = `toast ${type}`;
-        
-        // Show toast
         toast.classList.add('show');
         
-        // Hide after 4 seconds
         setTimeout(() => {
             toast.classList.remove('show');
         }, 4000);
     }
 
-    // API Functions called from HTML
+    // API Functions
     async callPatient(phone) {
         this.showToast(`Calling ${phone}...`, 'info');
-        // Simulate call functionality
         await new Promise(resolve => setTimeout(resolve, 1000));
         this.showToast('Call initiated', 'success');
     }
@@ -872,13 +799,8 @@ class PinkHealthDashboard {
             try {
                 const response = await fetch('/api/send-message', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        phoneNumber: phone,
-                        message: message
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phoneNumber: phone, message: message })
                 });
 
                 if (response.ok) {
@@ -894,18 +816,15 @@ class PinkHealthDashboard {
 
     viewAppointment(appointmentId) {
         this.showToast(`Viewing appointment ${appointmentId}`, 'info');
-        // Implement appointment details modal
     }
 
     rescheduleAppointment(appointmentId) {
         this.showToast(`Rescheduling appointment ${appointmentId}`, 'warning');
-        // Implement reschedule functionality
     }
 
     cancelAppointment(appointmentId) {
         if (confirm('Are you sure you want to cancel this appointment?')) {
             this.showToast(`Appointment ${appointmentId} cancelled`, 'error');
-            // Implement cancel functionality
         }
     }
 
@@ -917,15 +836,19 @@ class PinkHealthDashboard {
 
     exportReport() {
         this.showToast('Generating report...', 'info');
-        // Simulate report generation
         setTimeout(() => {
             this.showToast('Report downloaded', 'success');
         }, 2000);
     }
 }
 
-// WhatsApp Control Functions (called from HTML)
+// Control Functions (simplified for Vercel)
 async function startWhatsApp() {
+    if (dashboard.isVercel) {
+        dashboard.showToast('WhatsApp runs in cloud mode on Vercel', 'info');
+        return;
+    }
+    
     try {
         dashboard.showLoading(true);
         dashboard.showToast('Starting WhatsApp Bot...', 'info');
@@ -936,7 +859,6 @@ async function startWhatsApp() {
         if (data.success) {
             dashboard.showToast('WhatsApp Bot started successfully!', 'success');
             
-            // Update QR code display
             const qrDisplay = document.getElementById('qr-code');
             if (qrDisplay) {
                 qrDisplay.innerHTML = `
@@ -950,7 +872,6 @@ async function startWhatsApp() {
                 `;
             }
             
-            // Update button states
             const startBtn = document.getElementById('start-whatsapp');
             const stopBtn = document.getElementById('stop-whatsapp');
             if (startBtn) startBtn.disabled = true;
@@ -971,13 +892,11 @@ async function startWhatsApp() {
 async function stopWhatsApp() {
     dashboard.showToast('Stopping WhatsApp Bot...', 'warning');
     
-    // Update button states
     const startBtn = document.getElementById('start-whatsapp');
     const stopBtn = document.getElementById('stop-whatsapp');
     if (startBtn) startBtn.disabled = false;
     if (stopBtn) stopBtn.disabled = true;
     
-    // Reset QR display
     const qrDisplay = document.getElementById('qr-code');
     if (qrDisplay) {
         qrDisplay.innerHTML = `
@@ -997,9 +916,7 @@ async function sendTestMessage() {
         try {
             const response = await fetch('/api/send-message', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     phoneNumber: phoneNumber,
                     message: 'Hello! This is a test message from PinkHealth Clinic. 🏥\n\nOur WhatsApp booking system is working perfectly!\n\nReply with "hi" to start booking an appointment.'
@@ -1017,36 +934,33 @@ async function sendTestMessage() {
     }
 }
 
-// Global functions for search
+// Global functions
 function searchPatient() {
-    if (dashboard) {
-        dashboard.searchPatient();
-    }
+    if (dashboard) dashboard.searchPatient();
 }
 
 function refreshAppointments() {
-    if (dashboard) {
-        dashboard.refreshAppointments();
-    }
+    if (dashboard) dashboard.refreshAppointments();
 }
 
 function exportReport() {
-    if (dashboard) {
-        dashboard.exportReport();
-    }
+    if (dashboard) dashboard.exportReport();
 }
 
-// Initialize dashboard when DOM is loaded
+// Initialize dashboard
 let dashboard;
 
 document.addEventListener('DOMContentLoaded', function() {
     dashboard = new PinkHealthDashboard();
     console.log('🎉 PinkHealth Dashboard Ready!');
+    
+    if (dashboard.isVercel) {
+        console.log('🌐 Running in Vercel cloud mode - Optimized for serverless');
+    }
 });
 
 // Handle window resize
 window.addEventListener('resize', function() {
-    // Resize charts if they exist
     if (dashboard && dashboard.charts) {
         Object.values(dashboard.charts).forEach(chart => {
             if (chart && typeof chart.resize === 'function') {
